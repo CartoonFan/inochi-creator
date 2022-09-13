@@ -15,6 +15,8 @@ import std.array;
 private {
     ImFontAtlas* atlas;
 
+    version (NoUIScaling) { } else { float uiScale; }
+
     FontEntry[] families;
     void _incInitFontList() {
         string fontsPath = incGetAppFontsPath();
@@ -36,7 +38,9 @@ private {
         ImFontAtlas_AddFontFromMemoryTTF(atlas, cast(void*)data.ptr, cast(int)data.length, size, cfg, ranges);
     }
 
-    ubyte[] NOTO = cast(ubyte[])import("NotoSansCJK-Regular.ttc");
+    ubyte[] OPEN_DYSLEXIC = cast(ubyte[])import("OpenDyslexic.otf");
+    ubyte[] NOTO = cast(ubyte[])import("NotoSans-Regular.ttf");
+    ubyte[] NOTO_CJK = cast(ubyte[])import("NotoSansCJK-Regular.ttc");
     ubyte[] ICONS = cast(ubyte[])import("MaterialIcons.ttf");
 }
 
@@ -66,17 +70,47 @@ struct FontEntry {
 void incInitFonts() {
     _incInitFontList();
     atlas = igGetIO().Fonts;
-        _incAddFontData("APP\0", NOTO, 26, (cast(ImWchar[])[
-            0x0020, 0x00FF, // Basic Latin + Latin Supplement
-            0x2000, 0x206F, // General Punctuation
+        if (incSettingsGet!bool("useOpenDyslexic")) {
+
+            // Use OpenDyslexic for Latin
+            _incAddFontData("APP\0", OPEN_DYSLEXIC, 24, (cast(ImWchar[])[
+                0x0020, 0x024F, // Basic Latin + Latin Supplement & Extended
+                0]).ptr,
+                ImVec2(0, -8)
+            );
+
+            // Everything else will have to be NOTO
+            _incAddFontData("APP\0", NOTO, 26, (cast(ImWchar[])[
+                0x0250, 0x036F, // IPA Extensions + Spacings + Diacritical Marks
+                0x0370, 0x03FF, // Greek and Coptic
+                0x0400, 0x052F, // Cyrillic + Supplementary
+                0x2000, 0x206F, // General Punctuation
+                0xFFFD, 0xFFFD, // Invalid
+                0]).ptr,
+                ImVec2(0, -6)
+            );
+        } else {
+            _incAddFontData("APP\0", NOTO, 26, (cast(ImWchar[])[
+                0x0020, 0x024F, // Basic Latin + Latin Supplement & Extended
+                0x0250, 0x036F, // IPA Extensions + Spacings + Diacritical Marks
+                0x0370, 0x03FF, // Greek and Coptic
+                0x0400, 0x052F, // Cyrillic + Supplementary
+                0x2000, 0x206F, // General Punctuation
+                0xFFFD, 0xFFFD, // Invalid
+                0]).ptr,
+                ImVec2(0, -6)
+            );
+        }
+
+        _incAddFontData("APP\0", NOTO_CJK, 26, (cast(ImWchar[])[
             0x3000, 0x30FF, // CJK Symbols and Punctuations, Hiragana, Katakana
             0x31F0, 0x31FF, // Katakana Phonetic Extensions
             0xFF00, 0xFFEF, // Half-width characters
-            0xFFFD, 0xFFFD, // Invalid
-            0x4e00, 0x9FAF, // CJK Ideograms
+            0x4E00, 0x9FAF, // CJK Ideograms
             0]).ptr,
             ImVec2(0, -6)
         );
+
         _incAddFontData(
             "Icons", 
             ICONS, 
@@ -85,54 +119,12 @@ void incInitFonts() {
                 cast(ImWchar)0xE000, 
                 cast(ImWchar)0xF23B
             ].ptr, 
-            ImVec2(0, -2)
+            ImVec2(0, 2)
         );
     ImFontAtlas_Build(atlas);
-    incSetUIScale(incGetUIScale());
-}
 
-/**
-    Sets the UI scale for fonts
-*/
-void incSetUIScale(float scale) {
-    incSettingsSet("UIScale", scale);
-    igGetIO().FontGlobalScale = incGetUIScaleFont();
-}
-
-/**
-    Get the UI scale in terms of font size
-*/
-float incGetUIScaleFont() {
-    return incGetUIScale()/2;
-}
-
-/**
-    Returns the UI Scale
-*/
-float incGetUIScale() {
-    return incSettingsGet!float("UIScale", 1.0);
-}
-
-/**
-    Gets the UI scale in text form
-*/
-string incGetUIScaleText() {
-    import std.format : format;
-    return "%s%%".format(cast(int)(incGetUIScale()*100));
-}
-
-/**
-    Begins a section where text is double size
-*/
-void incFontsBeginLarge() {
-    igGetIO().FontGlobalScale = incGetUIScaleFont()*2;
-}
-
-/**
-    Ends a section where text is double size
-*/
-void incFontsEndLarge() {
-    igGetIO().FontGlobalScale = incGetUIScaleFont();
+    // Half size because the extra size is for scaling
+    igGetIO().FontGlobalScale = 0.5;
 }
 
 /**
@@ -141,7 +133,3 @@ void incFontsEndLarge() {
 FontEntry[] incFontsGet() {
     return families;
 }
-
-// void incFontSet(string file) {
-
-// }

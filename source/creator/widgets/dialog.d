@@ -6,8 +6,10 @@
 */
 module creator.widgets.dialog;
 import creator.widgets.dummy;
+import creator.widgets.label;
 import creator.core.font;
 import bindbc.imgui;
+import inochi2d;
 import i18n;
 
 enum DialogLevel : size_t {
@@ -24,6 +26,24 @@ enum DialogButtons {
     No = 8
 }
 
+void incInitDialogs() {
+    // Only load Ada in official builds
+    version(InBranding) {
+        auto infoTex = ShallowTexture(cast(ubyte[])import("ui/ui-info.png"));
+        inTexPremultiply(infoTex.data);
+        auto warnTex = ShallowTexture(cast(ubyte[])import("ui/ui-warning.png"));
+        inTexPremultiply(warnTex.data);
+        auto errTex = ShallowTexture(cast(ubyte[])import("ui/ui-error.png"));
+        inTexPremultiply(errTex.data);
+
+        adaTextures = [
+            new Texture(infoTex),
+            new Texture(warnTex),
+            new Texture(errTex),
+        ];
+    }
+}
+
 /**
     Render dialogs
 */
@@ -31,29 +51,42 @@ void incRenderDialogs() {
     if (entries.length > 0) {
         auto entry = &entries[0];
 
-        if (!igIsPopupOpen(entry.tag)) {
-            igOpenPopup(entry.tag);
+        if (!igIsPopupOpen(entry.title)) {
+            igOpenPopup(entry.title);
         }
 
         auto flags = 
             ImGuiWindowFlags.NoSavedSettings | 
             ImGuiWindowFlags.NoResize | 
             ImGuiWindowFlags.AlwaysAutoResize;
-        if (igBeginPopupModal(entry.tag, null, flags)) {
-            float uiScale = incGetUIScale();
-            float errImgScale = 96*uiScale;
+            
+        ImVec2 wpos = ImVec2(
+            igGetMainViewport().Pos.x+(igGetMainViewport().Size.x/2),
+            igGetMainViewport().Pos.y+(igGetMainViewport().Size.y/2),
+        );
+        igSetNextWindowPos(wpos, ImGuiCond.Appearing, ImVec2(0.5, 0.5));
+        if (igBeginPopupModal(entry.title, null, flags)) {
+            float errImgScale = 112;
+            float msgEndPadding = 4;
+
 
             igBeginGroup();
-                // TODO: Render image of Ada depending on the DialogLevel
+
                 if (igBeginChild("ErrorMainBoxLogo", ImVec2(errImgScale, errImgScale))) {
                     version (InBranding) {
                         import creator.core : incGetLogo;
-                        igImage(cast(void*)incGetLogo(), ImVec2(errImgScale, errImgScale));
+                        igImage(cast(void*)adaTextures[cast(size_t)entry.level].getTextureId(), ImVec2(errImgScale, errImgScale));
                     }
-                    igEndChild();
                 }
-                igSameLine(0, 8);
-                igText(entry.text);
+                igEndChild();
+
+                igSameLine(0, 0);
+                igPushTextWrapPos(512);
+                    incText(entry.text);
+                igPopTextWrapPos();
+
+                igSameLine(0, 0);
+                incDummy(ImVec2(msgEndPadding, 1));
             igEndGroup();
 
 
@@ -61,17 +94,22 @@ void incRenderDialogs() {
             // BUTTONS
             //
             auto avail = incAvailableSpace();
-            float btnHeight = 24*uiScale;
-            float btnSize = (avail.x/2)/entry.btncount;
-            igDummy(ImVec2(avail.x/2, btnHeight));
-            igSameLine(0, 0);
+            float btnHeight = 24;
+            float btnSize = 80;
+            float totalBtnSize = btnSize*entry.btncount;
+            float msgAreaWidth = errImgScale+incMeasureString(entry.text).x+msgEndPadding;
+            float requestedMinimumSize = 256;
 
-            if ((entry.btns & DialogButtons.OK) == 1) {
-                if (igButton(__("OK"), ImVec2(btnSize, btnHeight))) {
-                    entry.selected = DialogButtons.OK;
-                    igCloseCurrentPopup();
-                }
-                igSameLine();
+            if ((msgAreaWidth < requestedMinimumSize) && totalBtnSize < requestedMinimumSize) {
+
+                // Handle very short dialog messages.
+                igDummy(ImVec2(requestedMinimumSize-(totalBtnSize+1), btnHeight));
+                igSameLine(0, 0);
+            } else if (avail.x > totalBtnSize) {
+                
+                // Add pre-padding to buttons
+                igDummy(ImVec2(avail.x-(totalBtnSize+1), btnHeight));
+                igSameLine(0, 0);
             }
             
             if ((entry.btns & DialogButtons.Cancel) == 2) {
@@ -79,15 +117,15 @@ void incRenderDialogs() {
                     entry.selected = DialogButtons.Cancel;
                     igCloseCurrentPopup();
                 }
-                igSameLine();
+                igSameLine(0, 0);
             }
-            
-            if ((entry.btns & DialogButtons.Yes) == 4) {
-                if (igButton(__("Yes"), ImVec2(btnSize, btnHeight))) {
-                    entry.selected = DialogButtons.Yes;
+
+            if ((entry.btns & DialogButtons.OK) == 1) {
+                if (igButton(__("OK"), ImVec2(btnSize, btnHeight))) {
+                    entry.selected = DialogButtons.OK;
                     igCloseCurrentPopup();
                 }
-                igSameLine();
+                igSameLine(0, 0);
             }
             
             if ((entry.btns & DialogButtons.No) == 8) {
@@ -95,7 +133,16 @@ void incRenderDialogs() {
                     entry.selected = DialogButtons.No;
                     igCloseCurrentPopup();
                 }
+                igSameLine(0, 0);
             }
+            
+            if ((entry.btns & DialogButtons.Yes) == 4) {
+                if (igButton(__("Yes"), ImVec2(btnSize, btnHeight))) {
+                    entry.selected = DialogButtons.Yes;
+                    igCloseCurrentPopup();
+                }
+            }
+
             igEndPopup();
         }
     }
@@ -110,7 +157,19 @@ void incCleanupDialogs() {
     }
 }
 
-void incDialog(const(char)* title, string body_, DialogLevel level = DialogLevel.Error, DialogButtons btns = DialogButtons.OK) {
+/**
+    Creates a dialog with the tag set to the title
+
+    Only use this if you don't need to query the exit state of the dialog
+*/
+void incDialog(const(char)* title, string body_, DialogLevel level = DialogLevel.Error, DialogButtons btns = DialogButtons.OK, void* userData = null) {
+    incDialog(title, title, body_, level, btns, userData);
+}
+
+/**
+    Creates a dialog
+*/
+void incDialog(const(char)* tag, const(char)* title, string body_, DialogLevel level = DialogLevel.Error, DialogButtons btns = DialogButtons.OK, void* userData = null) {
     import std.string : toStringz;
     int btncount = 0;
     if ((btns & DialogButtons.OK) == 1) btncount++;
@@ -119,12 +178,14 @@ void incDialog(const(char)* title, string body_, DialogLevel level = DialogLevel
     if ((btns & DialogButtons.No) == 8) btncount++;
 
     entries ~= DialogEntry(
+        tag,
         title,
-        body_.toStringz,
+        body_,
         level,
         btns,
         DialogButtons.NONE,
-        btncount
+        btncount,
+        userData
     );
 }
 
@@ -138,7 +199,18 @@ DialogButtons incDialogButtonSelected(const(char)* tag) {
     return entries[0].selected;
 }
 
+/**
+    Returns the user data bound to the dialog
+*/
+void* incDialogButtonUserData(const(char)* tag) {
+    if (entries.length == 0) return null;
+    if (entries[0].tag != tag) return null;
+    return entries[0].userData;
+}
+
 private {
+    Texture[] adaTextures;
+
     DialogEntry[] entries;
 
     DialogEntry* findDialogEntry(const(char)* tag) {
@@ -150,10 +222,12 @@ private {
 
     struct DialogEntry {
         const(char)* tag;
-        const(char)* text;
+        const(char)* title;
+        string text;
         DialogLevel level;
         DialogButtons btns;
         DialogButtons selected;
         int btncount;
+        void* userData;
     }
 }

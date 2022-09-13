@@ -25,6 +25,7 @@ void incInputSetViewportMouse(float x, float y) {
     vec2 camPos = inGetCamera().position;
     vec2 camScale = inGetCamera().scale;
     vec2 camCenter = inGetCamera().getCenterOffset();
+    float uiScale = incGetUIScale();
 
     mpos = (
         mat4.translation(
@@ -38,8 +39,8 @@ void incInputSetViewportMouse(float x, float y) {
             1
         ).inverse() *
         mat4.translation(
-            x, 
-            y, 
+            x*uiScale, 
+            y*uiScale, 
             0
         ) *
         vec4(0, 0, 0, 1)
@@ -174,16 +175,22 @@ ImGuiKey incKeyScancode(string c) {
 bool incShortcut(string s, bool repeat=false) {
     auto io = igGetIO();
 
+    if(io.KeyCtrl && io.KeyAlt) return false;
+
+    if (startsWith(s, "Ctrl+Shift+")) {
+        if (!(io.KeyCtrl && !io.KeyAlt && io.KeyShift)) return false;
+        s = s[11..$];
+    }
     if (startsWith(s, "Ctrl+")) {
-        if (!io.KeyCtrl) return false;
+        if (!(io.KeyCtrl && !io.KeyAlt && !io.KeyShift)) return false;
         s = s[5..$];
     }
     if (startsWith(s, "Alt+")) {
-        if (!io.KeyAlt) return false;
+        if (!(!io.KeyCtrl && io.KeyAlt && !io.KeyShift)) return false;
         s = s[4..$];
     }
     if (startsWith(s, "Shift+")) {
-        if (!io.KeyShift) return false;
+        if (!(!io.KeyCtrl && !io.KeyAlt && io.KeyShift)) return false;
         s = s[6..$];
     }
 

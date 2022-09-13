@@ -13,6 +13,8 @@ import creator.viewport.common;
 import creator.viewport.common.mesh;
 import creator.viewport.common.spline;
 import creator.core.input;
+import creator.core.actionstack;
+import creator.actions;
 import creator.widgets;
 import creator;
 import inochi2d;
@@ -53,8 +55,9 @@ private:
 
     bool deforming = false;
     CatmullSpline path;
-    CatmullSpline targetPath;
     uint pathDragTarget;
+
+    MeshEditorDeformationAction deformAction = null;
 
     bool isSelected(MeshVertex* vert) {
         import std.algorithm.searching : canFind;
@@ -78,16 +81,22 @@ private:
             auto lastSel = selected[$-1];
 
             selected = [vert];
+            if (deformAction)
+                deformAction.addVertex(vert);
             return lastSel;
         }
 
         selected = [vert];
+        if (deformAction)
+            deformAction.addVertex(vert);
         updateMirrorSelected();
         return null;
     }
 
     void deselectAll() {
         selected.length = 0;
+        if (deformAction)
+            deformAction.clear();
         updateMirrorSelected();
     }
 
@@ -156,7 +165,11 @@ private:
                 }
             });
         }
-
+        if (deformAction) {
+            foreach (v; mirrorSelected) {
+                deformAction.addVertex(v);
+            }
+        }
         selected = tmpSelected;
     }
 
@@ -256,18 +269,25 @@ public:
         if (data.vertices.length != target.vertices.length)
             vertexMapDirty = true;
 
+        // Apply the model
+        auto action = new DrawableChangeAction(target.name, target);
+        target.rebuffer(data);
+
         if (vertexMapDirty) {
             // Remove incompatible Deforms
 
             foreach (param; incActivePuppet().parameters) {
                 ParameterBinding binding = param.getBinding(target, "deform");
-                if (binding) param.removeBinding(binding);
+                if (binding) {
+                    param.removeBinding(binding);
+                    action.addBinding(param, binding);
+                }
             }
             vertexMapDirty = false;
         }
 
-        // Apply the model
-        target.rebuffer(data);
+        action.updateNewState();
+        incActionPush(action);
     }
 
     void applyPreview() {
@@ -275,6 +295,35 @@ public:
         previewMesh = null;
         previewTriangulate = false;
     }
+
+    void pushDeformAction() {
+        if (deformAction && deformAction.dirty) {
+            deformAction.updateNewState();
+            incActionPush(deformAction);
+            deformAction = null;
+        }        
+    }
+
+    MeshEditorDeformationAction getDeformAction(bool reset = false)() {
+        if (reset)
+            pushDeformAction();
+        if (deformAction is null || !deformAction.isApplyable()) {
+            switch (toolMode) {
+            case VertexToolMode.Points:
+                deformAction = new MeshEditorDeformationAction(target.name);
+                break;
+            case VertexToolMode.PathDeform:
+                deformAction = new MeshEditorPathDeformAction(target.name);
+                break;
+            default:
+            }
+        } else {
+            if (reset)
+                deformAction.clear();
+        }
+        return deformAction;
+    }
+    alias getCleanDeformAction = getDeformAction!true;
 
     bool update(ImGuiIO* io, Camera camera) {
         bool changed = false;
@@ -318,12 +367,21 @@ public:
 
                 isSelecting = false;
             }
+            pushDeformAction();
         }
 
         if (igIsMouseClicked(ImGuiMouseButton.Left)) maybeSelectOne = null;
 
         switch(toolMode) {
             case VertexToolMode.Points:
+
+                if (deformOnly) {
+                    incStatusTooltip(_("Select"), _("Left Mouse"));
+                } else {
+                    incStatusTooltip(_("Select"), _("Left Mouse"));
+                    incStatusTooltip(_("Create"), _("Ctrl+Left Mouse"));
+                }
+                
                 void addOrRemoveVertex(bool selectedOnly) {
                     if (deformOnly) return;
                     // Check if mouse is over a vertex
@@ -401,10 +459,15 @@ public:
                         // Add/remove action
                         addOrRemoveVertex(false);
                     } else {
+                        MeshEditorDeformationAction action;
                         // Select / drag start
+                        if (deformOnly) {
+                            action = getCleanDeformAction();
+                        } 
+
                         if (mesh.isPointOverVertex(mousePos)) {
                             if (io.KeyShift) toggleSelect(vtxAtMouse);
-                            else if (!isSelected(vtxAtMouse)) selectOne(vtxAtMouse);
+                            else if (!isSelected(vtxAtMouse))  selectOne(vtxAtMouse);
                             else maybeSelectOne = vtxAtMouse;
                         } else {
                             selectOrigin = mousePos;
@@ -424,7 +487,10 @@ public:
 
                 // Dragging
                 if (igIsMouseDown(ImGuiMouseButton.Left) && incInputIsDragRequested(ImGuiMouseButton.Left)) {
-                    if (!isSelecting) isDragging = true;
+                    if (!isSelecting) {
+                        isDragging = true;
+                        getDeformAction();
+                    }
                 }
 
                 if (isDragging) {
@@ -432,6 +498,10 @@ public:
                         foreachMirror((uint axis) {
                             MeshVertex *v = mirrorVertex(axis, select);
                             if (v is null) return;
+                            if (deformAction) {
+                                deformAction.addVertex(v);
+                                deformAction.markAsDirty();
+                            }
                             v.position += mirror(axis, mousePos - lastMousePos);
                         });
                     }
@@ -442,6 +512,12 @@ public:
                 break;
             case VertexToolMode.Connect:
                 assert(!deformOnly);
+                if (selected.length == 0) {
+                    incStatusTooltip(_("Select"), _("Left Mouse"));
+                } else{
+                    incStatusTooltip(_("Connect/Disconnect"), _("Left Mouse"));
+                    incStatusTooltip(_("Connect Multiple"), _("Shift+Left Mouse"));
+                }
 
                 if (igIsMouseClicked(ImGuiMouseButton.Left)) {
                     if (vtxAtMouse !is null) {
@@ -481,18 +557,41 @@ public:
                 }
                 break;
             case VertexToolMode.PathDeform:
+                if (deforming) {
+                    incStatusTooltip(_("Deform"), _("Left Mouse"));
+                    incStatusTooltip(_("Switch Mode"), _("TAB"));
+                } else {
+                    incStatusTooltip(_("Create/Destroy"), _("Left Mouse (x2)"));
+                    incStatusTooltip(_("Switch Mode"), _("TAB"));
+                }
+                
                 vtxAtMouse = null; // Do not need this in this mode
 
                 if (incInputIsKeyPressed(ImGuiKey.Tab)) {
-                    if (path.target is null) path.createTarget(mesh);
+                    if (path.target is null) {
+                        path.createTarget(mesh);
+                        getCleanDeformAction();
+                    } else {
+                        if (deformAction !is null) {
+                            pushDeformAction();
+                            getCleanDeformAction();
+                        }
+                    }
                     deforming = !deforming;
-                    if (deforming) path.updateTarget(mesh);
+                    if (deforming) {
+                        getCleanDeformAction();
+                        path.updateTarget(mesh);
+                    }
                     else path.resetTarget(mesh);
                     changed = true;
                 }
 
                 CatmullSpline editPath = path;
-                if (deforming) editPath = path.target;
+                if (deforming) {
+                    if (deformAction is null)
+                        getCleanDeformAction();
+                    editPath = path.target;
+                }
 
                 if (igIsMouseDoubleClicked(ImGuiMouseButton.Left) && !deforming) {
                     int idx = path.findPoint(mousePos);
@@ -505,7 +604,10 @@ public:
                 }
 
                 if (igIsMouseDown(ImGuiMouseButton.Left) && incInputIsDragRequested(ImGuiMouseButton.Left)) {
-                    if (pathDragTarget != -1) isDragging = true;
+                    if (pathDragTarget != -1)  {
+                        isDragging = true;
+                        getDeformAction();
+                    }
                 }
 
                 if (isDragging && pathDragTarget != -1) {
@@ -513,6 +615,8 @@ public:
                     editPath.update();
                     if (deforming) {
                         path.updateTarget(mesh);
+                        if (deformAction)
+                            deformAction.markAsDirty();
                         changed = true;
                     } else {
                         path.mapReference();
@@ -642,5 +746,14 @@ public:
             incTooltip(_("Path Deform Tool"));
 
         igPopStyleVar();
-   }
+    }
+
+
+    CatmullSpline getPath() {
+        return path;
+    }
+    void setPath(CatmullSpline path) {
+        this.path = path;
+
+    }
 }

@@ -26,6 +26,8 @@ private:
     ImVec2 lastSize;
     bool actingInViewport;
 
+    ImVec2 priorWindowPadding;
+
 protected:
     override
     void onBeginUpdate() {
@@ -33,6 +35,7 @@ protected:
         ImGuiWindowClass wmclass;
         wmclass.DockNodeFlagsOverrideSet = ImGuiDockNodeFlagsI.NoTabBar;
         igSetNextWindowClass(&wmclass);
+        priorWindowPadding = igGetStyle().WindowPadding;
         igPushStyleVar(ImGuiStyleVar.WindowPadding, ImVec2(1, 2));
         igSetNextWindowDockID(incGetViewportDockSpace(), ImGuiCond.Always);
         super.onBeginUpdate();
@@ -72,7 +75,7 @@ protected:
             );
 
             if (currSize != lastSize) {
-                inSetViewport(cast(int)currSize.x, cast(int)currSize.y);
+                inSetViewport(cast(int)(currSize.x*incGetUIScale()), cast(int)(currSize.y*incGetUIScale()));
             }
 
             incViewportPoll();
@@ -104,11 +107,40 @@ protected:
             
             igImage(
                 cast(void*)inGetRenderImage(), 
-                ImVec2(width, height), 
-                ImVec2(0, 1), 
-                ImVec2(1, 0), 
+                ImVec2(ceil(width/incGetUIScale()), ceil(height/incGetUIScale())), 
+                ImVec2((0.5/width), 1-(0.5/height)), 
+                ImVec2(1-(0.5/width), (0.5/height)), 
                 ImVec4(1, 1, 1, 1), ImVec4(0, 0, 0, 0)
             );
+
+            // Popup right click menu
+            igPushStyleVar(ImGuiStyleVar.WindowPadding, priorWindowPadding);
+            if (incViewportHasMenu()) {
+                static ImVec2 downPos;
+                ImVec2 currPos;
+                if (igIsItemHovered()) {
+                    if (igIsItemClicked(ImGuiMouseButton.Right)) {
+                        igGetMousePos(&downPos);
+                    }
+
+                    if (!igIsPopupOpen("ViewportMenu") && igIsMouseReleased(ImGuiMouseButton.Right)) {
+                        igGetMousePos(&currPos);
+                        float dist = sqrt(((downPos.x-currPos.x)^^2)+((downPos.y-currPos.y)^^2));
+                        
+                        if (dist < 16) {
+                            incViewportMenuOpening();
+                            igOpenPopup("ViewportMenu");
+                        }
+                    }
+                }
+
+                if (igBeginPopup("ViewportMenu")) {
+                    incViewportMenu();
+                    igEndPopup();
+                }
+            }
+            igPopStyleVar();
+
             igGetCursorScreenPos(&sPosA);
 
             // Render our fancy in-viewport buttons
@@ -116,7 +148,7 @@ protected:
                 igSetItemAllowOverlap();
                 
                 igPushStyleVar(ImGuiStyleVar.FrameRounding, 0);
-                    if (igBeginChild("##ViewportMainControls", ImVec2(200, 28 * incGetUIScale()))) {
+                    if (igBeginChild("##ViewportMainControls", ImVec2(200, 28))) {
                         igPushStyleVar_Vec2(ImGuiStyleVar.FramePadding, ImVec2(6, 6));
                             incViewportDrawOverlay();
                         igPopStyleVar();
@@ -199,25 +231,21 @@ protected:
                     incViewportTargetZoom = incViewportZoom;
                 }
                 if (incViewportTargetZoom != 1) {
-                    igPushFont(incIconFont());
-                        igSameLine(0, 8);
-                        if (igButton("", ImVec2(0, 0))) {
-                            incViewportTargetZoom = 1;
-                        }
-                    igPopFont();
+                    igSameLine(0, 8);
+                    if (igButton("", ImVec2(0, 0))) {
+                        incViewportTargetZoom = 1;
+                    }
                 }
                 igSameLine(0, 8);
                 igSeparatorEx(ImGuiSeparatorFlags.Vertical);
 
                 igSameLine(0, 8);
-                igText("x = %.2f y = %.2f", incViewportTargetPosition.x, incViewportTargetPosition.y);
+                incText("x = %.2f y = %.2f".format(incViewportTargetPosition.x, incViewportTargetPosition.y));
                 if (incViewportTargetPosition != vec2(0)) {
                     igSameLine(0, 8);
-                    igPushFont(incIconFont());
-                        if (igButton("##2", ImVec2(0, 0))) {
-                            incViewportTargetPosition = vec2(0, 0);
-                        }
-                    igPopFont();
+                    if (igButton("##2", ImVec2(0, 0))) {
+                        incViewportTargetPosition = vec2(0, 0);
+                    }
                 }
 
 

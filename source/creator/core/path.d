@@ -118,21 +118,16 @@ string incGetAppFontsPath() {
         
         // Create our font directory
         mkdirRecurse(cachedFontDir);
-
-        // Create our font dir and install our fonts
-        import std.file : write;
-
-        write(buildPath(cachedFontDir, "OpenDyslexic.otf"), import("OpenDyslexic.otf"));
-        // TODO: Write a license file for OpenDyslexic?
     }
     return cachedFontDir;
 }
 
 /**
-    Gets directory for custom fonts
+    Gets directory for custom locales
 */
 string incGetAppLocalePath() {
     if (cachedLocaleDir) return cachedLocaleDir;
+
     cachedLocaleDir = buildPath(incGetAppConfigPath(), "i18n");
     if (!exists(cachedLocaleDir)) {
         
@@ -140,4 +135,20 @@ string incGetAppLocalePath() {
         mkdirRecurse(cachedLocaleDir);
     }
     return cachedLocaleDir;
+}
+
+/**
+    Gets special directory for locales
+*/
+string incGetAppLocalePathExtra() {
+    
+    // AppImage locale dir is the root of the appimage
+    version(linux) {
+        auto here = environment.get("HERE");
+        if (here) {
+            return here;
+        }    
+    }
+
+    return null;
 }

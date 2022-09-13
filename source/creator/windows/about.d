@@ -7,6 +7,8 @@
 module creator.windows.about;
 import creator.widgets.dummy;
 import creator.widgets.tooltip;
+import creator.widgets.label;
+import creator.widgets.markdown;
 import creator.windows;
 import creator.core;
 import creator;
@@ -19,11 +21,11 @@ import std.stdio;
 class AboutWindow : Window {
 private:
     version (InBranding) {
-        Texture ada;
-        enum ADA_SIZE = 373;
+        enum ADA_SIZE = 332;
         enum ADA_SIZE_PARTIAL = ADA_SIZE/6;
         vec2 ada_float;
     }
+    MarkdownConfig cfg;
 
 protected:
     override
@@ -40,15 +42,15 @@ protected:
         ImVec2 sPos;
         igGetCursorScreenPos(&sPos);
 
-
         version (InBranding) {
             ImVec2 avail = incAvailableSpace();
             igSetCursorScreenPos(ImVec2(
                 sPos.x+(avail.x-(ADA_SIZE-ADA_SIZE_PARTIAL)), 
                 sPos.y+(avail.y-(ADA_SIZE+28))+(sin(currentTime())*4)
             ));
+
             igImage(
-                cast(void*)ada.getTextureId(),
+                cast(void*)incGetAda().getTextureId(),
                 ImVec2(ADA_SIZE, ADA_SIZE),
                 ImVec2(0, 0),
                 ImVec2(1, 1), 
@@ -58,12 +60,12 @@ protected:
 
         // Draw the actual about dialog
         igSetCursorScreenPos(sPos);
-        if (igBeginChild("##LogoArea", ImVec2(0, 92*incGetUIScale()))) {
+        if (igBeginChild("##LogoArea", ImVec2(0, 92))) {
 
             version (InBranding) {
                 igImage(
-                    cast(void*)incGetLogo(), 
-                    ImVec2(64*incGetUIScale(), 64*incGetUIScale()), 
+                    cast(void*)incGetLogo().getTextureId(), 
+                    ImVec2(64, 64), 
                     ImVec2(0, 0), 
                     ImVec2(1, 1), 
                     ImVec4(1, 1, 1, 1), 
@@ -76,8 +78,8 @@ protected:
             igSameLine(0, 8);
             if (igBeginChild("##LogoTextArea", ImVec2(0, -24))) {
 
-                igText("Inochi Creator");
-                igText("%s", (INC_VERSION~"\0").ptr);
+                incText("Inochi Creator");
+                incText(INC_VERSION);
                 igSeparator();
                 igTextColored(ImVec4(0.5, 0.5, 0.5, 1), "I2D v. %s", (IN_VERSION~"\0").ptr);
                 igTextColored(ImVec4(0.5, 0.5, 0.5, 1), "imgui v. %s", igGetVersion());
@@ -85,14 +87,18 @@ protected:
             igEndChild();
             
             igSpacing();
-            igText("Credits");
+            incText("Credits");
             igSeparator();
         }
         igEndChild();
 
-        if (igBeginChild("##CreditsArea", ImVec2(0, -28*incGetUIScale()))) {
-            igText(import("CONTRIBUTORS.md"));
-        }
+        igPushStyleColor(ImGuiCol.Button, ImVec4(0.176, 0.447, 0.698, 1));
+        igPushStyleColor(ImGuiCol.ButtonHovered, ImVec4(0.313, 0.521, 0.737, 1));
+            if (igBeginChild("##CreditsArea", ImVec2(0, -28))) {
+                incMarkdown(import("CONTRIBUTORS.md"), cfg);
+            }
+        igPopStyleColor();
+        igPopStyleColor();
         igEndChild();
 
         if (igBeginChild("##ButtonArea", ImVec2(0, 0))) {
@@ -123,20 +129,18 @@ protected:
     }
 
 public:
-    ~this() {
-        version(InBranding) destroy(ada);
-    }
-
     this() {
         super(_("About"));
         this.onlyOne = true;
 
+        cfg.headingFormats[0] = MarkdownHeadingFormat(2, true);
+        cfg.headingFormats[1] = MarkdownHeadingFormat(1.5, false);
+        cfg.headingFormats[2] = MarkdownHeadingFormat(1.2, false);
+        cfg.linkCallback = (MarkdownLinkCallbackData data) {
+            incOpenLink(data.link);
+        };
+
         // Only load Ada in official builds
-        version(InBranding) {
-            ada_float = vec2(0);
-            auto adaData = ShallowTexture(cast(ubyte[])import("ada-tex.png"));
-            inTexPremultiply(adaData.data);
-            ada = new Texture(adaData);
-        }
+        version(InBranding) ada_float = vec2(0);
     }
 }

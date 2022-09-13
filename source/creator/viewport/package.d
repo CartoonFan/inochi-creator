@@ -7,6 +7,7 @@
 module creator.viewport;
 import inochi2d;
 import creator;
+import creator.core;
 import creator.core.input;
 import bindbc.imgui;
 import creator.viewport.model;
@@ -37,6 +38,10 @@ void incViewportDraw() {
             default: assert(0);
         }
     inEndScene();
+
+    if (incShouldPostProcess) {
+        inPostProcessScene();
+    }
 }
 
 /**
@@ -163,6 +168,30 @@ void incViewportWithdrawMode(EditMode mode) {
     }
 }
 
+void incViewportMenu() {
+    switch(incEditMode) {
+        case EditMode.ModelEdit:
+            incViewportModelMenu();
+            break;
+        default: return;
+    }
+}
+
+void incViewportMenuOpening() {
+    switch(incEditMode) {
+        case EditMode.ModelEdit:
+            incViewportModelMenuOpening();
+            break;
+        default: return;
+    }
+}
+
+bool incViewportHasMenu() {
+    switch(incEditMode) {
+        case EditMode.ModelEdit: return true;
+        default: return false;
+    }
+}
 
 /**
     Updates the viewport tool settings
@@ -191,8 +220,9 @@ bool incViewportAlwaysUpdate() {
 
 /// For when there's no tools for that view
 void incViewportToolSettingsNoTool() {
-    import i18n : __;
-    igText(__("No tool selected..."));
+    import i18n : _;
+    import creator.widgets.label;
+    incText(_("No tool selected..."));
 }
 
 

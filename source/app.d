@@ -14,11 +14,15 @@ import creator.windows;
 import creator.widgets;
 import creator.core.actionstack;
 import creator.core.i18n;
+import creator.io;
+import creator.atlas.atlas : incInitAtlassing;
+import creator.ext;
 import inochi2d;
 import creator;
 import i18n;
 
 version(D_X32) {
+    pragma(msg, "Inochi Creator does not support compilation on 32 bit platforms");
     static assert(0, "😎👉👉 no");
 }
 
@@ -26,12 +30,17 @@ version(Windows) {
     debug {
 
     } else {
-        version (LDC) {
-            pragma(linkerDirective, "/SUBSYSTEM:WINDOWS");
-            static if (__VERSION__ >= 2091)
-                pragma(linkerDirective, "/ENTRY:wmainCRTStartup");
-            else
-                pragma(linkerDirective, "/ENTRY:mainCRTStartup");
+        version(InLite) {   
+            // Sorry to the programming gods for this crime
+            // phobos will crash in lite mode if this isn't here.
+        } else {
+            version (LDC) {
+                pragma(linkerDirective, "/SUBSYSTEM:WINDOWS");
+                static if (__VERSION__ >= 2091)
+                    pragma(linkerDirective, "/ENTRY:wmainCRTStartup");
+                else
+                    pragma(linkerDirective, "/ENTRY:mainCRTStartup");
+            }
         }
     }
 }
@@ -51,16 +60,33 @@ int main(string[] args)
 
         inSetUpdateBounds(true);
 
+        // Initialize Window and Inochi2D
         incInitPanels();
         incActionInit();
-
         incOpenWindow();
+
+        // Initialize node overrides
+        incInitExt();
+
+        // Initialize video exporting
+        incInitVideoExport();
+        
+        // Initialize atlassing
+        incInitAtlassing();
+
+        // Initialize default post processing shader
+        inPostProcessingAddBasicLighting();
+
+        // Open or create project
         if (args.length > 1) incOpenProject(args[1]);
-        else incNewProject();
-        if (incSettingsGet!bool("ShowWarning", true)) {
-            incPushWindow(new NoticeWindow());
+        else {
+            incNewProject();
+
+            // TODO: Replace with first-time welcome screen
+            incPushWindow(new WelcomeWindow());
         }
 
+        // Update loop
         while(!incIsCloseRequested()) {
             incUpdate();
         }
